@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CLIPS: An Enhanced CLIP Framework for Learning with Synthetic Captions</title>
+
+
+  <link rel="stylesheet" href="./static/css/bulma.min.css">
+  <link rel="stylesheet" href="./static/css/bulma-carousel.min.css">
+  <link rel="stylesheet" href="./static/css/bulma-slider.min.css">
+  <link rel="stylesheet" href="./static/css/fontawesome.all.min.css">
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
+  <link rel="stylesheet" href="./static/css/index.css">
+  <link rel="icon" href="./resources/icon.png">
+
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <script defer src="./static/js/fontawesome.all.min.js"></script>
+  <script src="./static/js/bulma-carousel.min.js"></script>
+  <script src="./static/js/bulma-slider.min.js"></script>
+  <script src="./static/js/index.js"></script>
+</head>
+<body>
+
+
+
+<section class="hero">
+  <div class="hero-body">
+    <div class="container is-max-desktop">
+      <div class="columns is-centered">
+        <div class="column has-text-centered">
+          <h1 class="title is-1 publication-title">CLIPS: An Enhanced CLIP Framework for Learning with Synthetic Captions</h1>
+          <div class="is-size-5 publication-authors">
+            <span class="author-block">
+              <span><a href="https://yanqing0327.github.io/Yanqing.github.io/">Yanqing Liu</a></span><sup>1</sup>,</span>
+            <span class="author-block">
+              <span><a href="https://xhl-video.github.io/xianhangli/">Xianhang Li</a></span><sup>1</sup>,</span>
+            <span class="author-block">
+              <span><a href="https://zw615.github.io/">Zeyu Wang</a></span><sup>1</sup>,</span>
+            </span>
+            <span class="author-block">
+              <span><a href="https://bzhao.me/">Bingchen Zhao</a></span><sup>2</sup>,</span>
+            </span>
+            <span class="author-block">
+              <span><a href="https://cihangxie.github.io/">Cihang Xie</a></span><sup>1</sup></span>
+            </span>
+          </div>
+          <br/>
+          <div class="is-size-5 publication-authors">
+            <span class="author-block"><sup>1</sup>UC Santa Cruz, </span>
+            <span class="author-block"><sup>2</sup>University of Edinburgh </span>
+            
+          </div>
+
+          <div class="column has-text-centered">
+            <div class="publication-links">
+              <!-- PDF Link. -->
+              <span class="link-block">
+                <a href="https://arxiv.org/abs/2406.08478"
+                   class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                    <i class="fa-solidassasas fa-face-smiling-hands"></i>
+                    <img src="./resources/ar.svg" alt="img" style="width: 100%; height: 100%" /> 
+                  </span>
+                  <span>arXiv</span>
+                </a>
+              </span>
+              <!-- Code Link. -->
+              <span class="link-block">
+                <a href="https://github.com/UCSC-VLAA/CLIPS"
+                   class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                      <i class="fab fa-github"></i>
+                  </span>
+                  <span>Code</span>
+                  </a>
+              </span>
+
+                <span class="link-block">
+                <a href="https://huggingface.co/tennant/llava-llama-3-8b-hqedit"
+                   class="external-link button is-normal is-rounded is-dark">
+                  <span class="icon">
+                    <i class="fa-solidasasa fa-face-smiling-hands"></i>
+                   <img src="./resources/gr.svg" alt="img" style="width: 100%; height: 100%" /> 
+                  </span>
+                   <span>Model</span>
+                  </a>
+                </span>
+
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+
+<section class="hero teaser">
+  <div class="container">
+    <div class="hero-body", style="text-align: center;">
+      <img src="./resources/pipeline_1110.jpg" alt="alt text"
+                        style="width: 50%; object-fit: cover; max-width:50%;"></a>
+      <h2 class="subtitle has-text-centered">
+        The pipeline of our proposed CLIPS. We introduce two simple yet effective designs:
+        <br>1) only a subpart of the synthetic caption is used in contrastive learning, and 
+        <br>2) a captioner predicts the full synthetic caption based on the web-crawled caption and the image.
+      </h2>
+    </div>
+  </div>
+</section>
+
+<!-- <section class="section">
+  <div class="container ">
+    <div class="hero-body">
+      <center><h2 class="title is-3">Demo</h2></center>
+  <iframe src="https://laos-y-hqedit.hf.space" frameborder="0" width="100%" height="1000"></iframe>
+</div>
+</div>
+</section> -->
+
+<section class="section">
+  <div class="container">
+    <!-- Abstract. -->
+    <div class="columns is-centered has-text-centered">
+      <div class="column is-four-fifths">
+        <h2 class="title is-3">Abstract</h2>
+        <div class="content has-text-justified">
+          <p>
+            Previous works show that noisy, web-crawled image-text pairs may limit vision-language pretraining like CLIP and propose 
+learning with synthetic captions as a promising alternative. 
+Our work continues this effort, introducing two simple yet effective designs to better leverage richly described synthetic captions. Firstly, by observing a strong inverse effect in learning with synthetic captions---the short synthetic captions can generally lead to MUCH higher performance than full-length ones---we therefore fed only partial synthetic captions to the text encoder.  Secondly, we incorporate an autoregressive captioner to mimic the recaptioning process---by conditioning on the paired image input and web-crawled text description, the captioner learns to predict the full-length synthetic caption generated by advanced MLLMs.
+Experiments show that our framework significantly improves zero-shot performance in cross-modal retrieval tasks, setting new SOTA results on MSCOCO and Flickr30K. Moreover, such trained vision encoders can enhance the visual capability of LLaVA, showing strong improvements on a range of MLLM benchmarks.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+    <!--/ Abstract. -->
+
+    <section class="section">
+      <div class="container">
+        <!-- Abstract. -->
+        <div class="columns is-centered has-text-centered">
+          <div class="column is-four-fifths">
+            <h2 class="title is-3">Inverse Effect with Synthetic Captions</h2>
+            <div class="content has-text-justified">
+              <center><img class="center" src="./resources/mask_strategy.jpg" width="100%"></center>
+              <p>
+                <strong style="font-weight: 900">Visualization of four different token reduction strategies.</strong>
+                These strategies can improve the model's learning efficiency on synthetic captions to varying degrees. Among these strategies, the sub-caption and block mask perform best.
+              </p>
+            </div>
+            <div class="columns is-multiline is-centered">
+              <!-- First image and caption -->
+              <div class="column is-one-quarter">
+                <img src="./resources/first_mask.jpg" alt="Pipeline 1" style="width: 100%;">
+              </div>
+              <!-- Second image and caption -->
+              <div class="column is-one-quarter">
+                <img src="./resources/random_mask.jpg" alt="Pipeline 2" style="width: 100%;">
+              </div>
+              <!-- Third image and caption -->
+              <div class="column is-one-quarter">
+                <img src="./resources/block_mask.jpg" alt="Pipeline 3" style="width: 100%;">
+              </div>
+              <!-- Fourth image and caption -->
+              <div class="column is-one-quarter">
+                <img src="./resources/subcaption_mask.jpg" alt="Pipeline 4" style="width: 100%;">
+              </div>
+              <p class="has-text-left">
+                <strong style="font-weight: 900">The inverse scaling effect of synthetic captions</strong>
+                Unlike the performance drop from reducing token length in original captions, shortening the token length of synthetic captions consistently improves model performance.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+          <section class="section">
+            <div class="container">
+              <!-- Abstract. -->
+              <div class="columns is-centered has-text-centered">
+                <div class="column is-four-fifths">
+                  <h2 class="title is-3">Zero-Shot Cross-Modal Retrieval</h2>
+                  <div class="content has-text-justified">
+                    <center><img class="center" src="./resources/image_text_retrieval.png" width="100%"></center>
+                    <p>
+                      <strong style="font-weight: 900">Zero-shot image-text retrieval results on MSCOCO and Flickr30K.</strong style="font-weight: 900">
+                        The CLIPA and CoCa results are reproduced by us. Both methods are implemented with a mixing ratio of 0.8, where the original caption accounts for 0.8 and the synthetic caption accounts for 0.2. Experimental results show that CLIPS significantly enhances zero-shot performance in cross-modal retrieval.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+
+          <section class="section">
+            <div class="container">
+              <!-- Abstract. -->
+              <div class="columns is-centered has-text-centered">
+                <div class="column is-four-fifths">
+                  <h2 class="title is-3">Comparision with State-of-the-art Methods</h2>
+                  <div class="content has-text-justified">
+                    <center><img class="center" src="./resources/sota.png" width="100%"></center>
+                    <p>
+                      <strong style="font-weight: 900">Comparison with other SOTA vision-language pre-training methods.</strong style="font-weight: 900">
+                        We report top-1 ImageNet-1K classification accuracy and zero-shot recall of image and text retrieval on MSCOCO and Flickr30K. With a ViT-L backbone, our CLIPS substantially outperforms SigLip by <strong>4.7</strong> (from 70.8% to 75.5%) on MSCOCO's R@1 text retrieval, and by 3.3 (from 52.3% to 55.6%) on MSCOCO's R@1 image retrieval. With increased computational resources and scaling, our best model further achieves <strong>76.4%</strong> and <strong>96.6%</strong> R@1 text retrieval performance on MSCOCO and Flickr30K respectively, and <strong>57.2%</strong> and <strong>83.9%</strong> R@1 image retrieval performance on the same datasets, setting new state-of-the-art (SOTA) results.
+                      </p>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+          <section class="section">
+            <div class="container">
+              <!-- Abstract. -->
+              <div class="columns is-centered has-text-centered">
+                <div class="column is-four-fifths">
+                  <h2 class="title is-3">CLIPS in LLaVA</h2>
+                  <div class="content has-text-justified">
+                    <center><img class="center" src="./resources/LLaVA.png" width="100%"></center>
+                    <p>
+                      <strong style="font-weight: 900">Comparison of LLaVA-1.5 performance.</strong style="font-weight: 900">
+                        We directly replace the original OpenAI-CLIP-Large-14 with the CLIPS-Large-14 and use LLaMA-3 as the language model. Our method achieves strong performance improvements across multiple metrics, effectively enhancing the cross-modal understanding capability of MLLM.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+
+          <section class="section">
+            <div class="container">
+              <!-- Abstract. -->
+              <div class="columns is-centered has-text-centered">
+                <div class="column is-four-fifths">
+                  <h2 class="title is-3">Model Zoo</h2>
+                  <div class="content has-text-justified">
+                    <p>
+                      We are pleased to announce the release of our models, including CLIPS-Large-14 and CLIPS-Huge-14!
+
+                    <h3>Models</h3>
+                    <table>
+                      <tr>
+                        <th>Model</th>
+                        <th>url</th>
+                      </tr>
+                      <tr>
+                        <td>CLIPS-Large-14</td>
+                        <td>Coming Soon...</td>
+                      </tr>
+                      <tr>
+                        <td>CLIPS-Huge-14</td>
+                        <td>Coming Soon...</td>
+                      </tr>
+                    </table>
+
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="section">
+            <div class="container">
+              <!-- Abstract. -->
+              <div class="columns is-centered has-text-centered">
+                <div class="column is-four-fifths">
+                  <h2 class="title is-3">Acknowledge</h2>
+                  <div class="content has-text-justified">
+                    <!-- <center><img class="center" src="./resources/recap_cvpr_ac_poster.jpg" width="95%"></center> -->
+                    We would like to thank TPU Research Cloud (TRC) program, Google Cloud Research Credits program, and AWS Cloud Credit for Research program for supporting our computing needs.
+                  </div>
+                </div>
+              </div>
+            </section>
+
+<section class="section" id="BibTeX">
+  <div class="container is-max-desktop content">
+    <h2 class="title">BibTeX</h2>
+    <pre><code>
+-----------------------------
+    </code></pre>
+  </div>
+</section>
+
+
+<footer class="footer">
+  <div class="container">
+    <div class="columns is-centered">
+      <div class="column is-8">
+        <div class="content">
+          <p>
+            Based on the following <a href="http://nerfies.github.io">template</a>.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
