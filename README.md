@@ -15,6 +15,7 @@
 ## **Links**
 - [📄 Paper (arXiv)](https://arxiv.org/abs/2406.08478)  
 - [🤗 Pretrained Model on HuggingFace](https://huggingface.co/UCSC-VLAA/ViT-L-14-CLIPS-Recap-DataComp-1B)  
+- [🌐 Project Page](https://ucsc-vlaa.github.io/CLIPS/)
 
 ---
 
