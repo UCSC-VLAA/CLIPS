@@ -2,24 +2,6 @@
 
 **Official implementation of the paper "_CLIPS: An Enhanced CLIP Framework for Learning with Synthetic Captions_".**
 
----
-
-## **Authors**
-
-- [Yanqing Liu](https://yanqing0327.github.io/Yanqing.github.io/)<sup>1</sup>, [Xianhang Li](https://xhl-video.github.io/xianhangli/)<sup>1</sup>, [Zeyu Wang](https://zw615.github.io/)<sup>1</sup>,  [Bingchen Zhao](https://bzhao.me/)<sup>2</sup>, [Cihang Xie](https://cihangxie.github.io/)<sup>1</sup>  
-
-<sup>1</sup>UC Santa Cruz, <sup>2</sup>University of Edinburgh  
-
----
-
-## **Links**
-- [📄 Paper (arXiv)](https://arxiv.org/abs/2406.08478)  
-- [🤗 Pretrained Model on HuggingFace](https://huggingface.co/UCSC-VLAA/ViT-L-14-CLIPS-Recap-DataComp-1B)  
-- [🌐 Project Page](https://ucsc-vlaa.github.io/CLIPS/)
-
----
-
-## **Proposed Method**
 
 ![Method Pipeline](./docs/resources/method.jpg)
 
@@ -29,6 +11,13 @@ Previous works show that noisy, web-crawled image-text pairs may limit vision-la
 2. We incorporate an **autoregressive captioner** that mimics the recaptioning process, predicting full-length synthetic captions conditioned on the image and original web-crawled captions.
 
 Our method achieves **state-of-the-art (SOTA)** results in zero-shot image-text retrieval on MSCOCO and Flickr30K, while enhancing the visual capability of LLaVA.
+
+---
+
+## **Links**
+- [📄 Paper (arXiv)](https://arxiv.org/abs/2406.08478)  
+- [🤗 Pretrained Model on HuggingFace](https://huggingface.co/UCSC-VLAA/ViT-L-14-CLIPS-Recap-DataComp-1B)  
+- [🌐 Project Page](https://ucsc-vlaa.github.io/CLIPS/)
 
 ---
 
