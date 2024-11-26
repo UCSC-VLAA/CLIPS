@@ -2,13 +2,14 @@
 
 **Official implementation of the paper "_CLIPS: An Enhanced CLIP Framework for Learning with Synthetic Captions_".**
 
----
+![Method Pipeline](./docs/resources/method.jpg)
 
-## **Authors**
+Previous works show that noisy, web-crawled image-text pairs may limit vision-language pretraining like CLIP and propose learning with synthetic captions as a promising alternative. Our work continues this effort, introducing two simple yet effective designs to better leverage richly described synthetic captions:
 
-- [Yanqing Liu](https://yanqing0327.github.io/Yanqing.github.io/)<sup>1</sup>, [Xianhang Li](https://xhl-video.github.io/xianhangli/)<sup>1</sup>, [Zeyu Wang](https://zw615.github.io/)<sup>1</sup>,  [Bingchen Zhao](https://bzhao.me/)<sup>2</sup>, [Cihang Xie](https://cihangxie.github.io/)<sup>1</sup>  
+1. By observing a strong inverse effect with synthetic captions, we use only **partial synthetic captions** to feed the text encoder, achieving significantly better performance.
+2. We incorporate an **autoregressive captioner** that mimics the recaptioning process, predicting full-length synthetic captions conditioned on the image and original web-crawled captions.
 
-<sup>1</sup>UC Santa Cruz, <sup>2</sup>University of Edinburgh  
+Our method achieves **state-of-the-art (SOTA)** results in zero-shot image-text retrieval on MSCOCO and Flickr30K, while enhancing the visual capability of LLaVA.
 
 ---
 
@@ -20,16 +21,6 @@
 ---
 
 ## **Proposed Method**
-
-### **CLIPS Pipeline**
-![Method Pipeline](./docs/resources/method.jpg)
-
-Previous works show that noisy, web-crawled image-text pairs may limit vision-language pretraining like CLIP and propose learning with synthetic captions as a promising alternative. Our work continues this effort, introducing two simple yet effective designs to better leverage richly described synthetic captions:
-
-1. By observing a strong inverse effect with synthetic captions, we use only **partial synthetic captions** to feed the text encoder, achieving significantly better performance.
-2. We incorporate an **autoregressive captioner** that mimics the recaptioning process, predicting full-length synthetic captions conditioned on the image and original web-crawled captions.
-
-Our method achieves **state-of-the-art (SOTA)** results in zero-shot image-text retrieval on MSCOCO and Flickr30K, while enhancing the visual capability of LLaVA.
 
 ---
 
