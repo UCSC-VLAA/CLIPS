@@ -78,7 +78,7 @@
               </span>
 
                 <span class="link-block">
-                <a href="https://huggingface.co/tennant/llava-llama-3-8b-hqedit"
+                <a href="https://huggingface.co/UCSC-VLAA/ViT-L-14-CLIPS-Recap-DataComp-1B"
                    class="external-link button is-normal is-rounded is-dark">
                   <span class="icon">
                     <i class="fa-solidasasa fa-face-smiling-hands"></i>
@@ -102,8 +102,8 @@
 <section class="hero teaser">
   <div class="container">
     <div class="hero-body", style="text-align: center;">
-      <img src="./resources/pipeline_1110.jpg" alt="alt text"
-                        style="width: 50%; object-fit: cover; max-width:50%;"></a>
+      <img src="./resources/method.jpg" alt="alt text"
+                        style="width: 60%; object-fit: cover; max-width:60%;"></a>
       <h2 class="subtitle has-text-centered">
         The pipeline of our proposed CLIPS. We introduce two simple yet effective designs:
         <br>1) only a subpart of the synthetic caption is used in contrastive learning, and 
@@ -172,7 +172,7 @@ Experiments show that our framework significantly improves zero-shot performance
                 <img src="./resources/subcaption_mask.jpg" alt="Pipeline 4" style="width: 100%;">
               </div>
               <p class="has-text-left">
-                <strong style="font-weight: 900">The inverse scaling effect of synthetic captions</strong>
+                <strong style="font-weight: 900">The inverse effect of synthetic captions.</strong>
                 Unlike the performance drop from reducing token length in original captions, shortening the token length of synthetic captions consistently improves model performance.
               </p>
             </div>
@@ -187,10 +187,10 @@ Experiments show that our framework significantly improves zero-shot performance
                 <div class="column is-four-fifths">
                   <h2 class="title is-3">Zero-Shot Cross-Modal Retrieval</h2>
                   <div class="content has-text-justified">
-                    <center><img class="center" src="./resources/image_text_retrieval.png" width="100%"></center>
+                    <center><img class="center" src="./resources/retrieval.png" width="100%"></center>
                     <p>
                       <strong style="font-weight: 900">Zero-shot image-text retrieval results on MSCOCO and Flickr30K.</strong style="font-weight: 900">
-                        The CLIPA and CoCa results are reproduced by us. Both methods are implemented with a mixing ratio of 0.8, where the original caption accounts for 0.8 and the synthetic caption accounts for 0.2. Experimental results show that CLIPS significantly enhances zero-shot performance in cross-modal retrieval.
+                        The CLIPA and CoCa results are reproduced by us. Both methods are implemented with a mixture training, where the original caption accounts for 80% and the synthetic caption accounts for 20%. Our method consistently achieves superior performance across all benchmarks and model sizes, yielding significant improvements over the baselines.
                     </p>
                   </div>
                 </div>
@@ -226,7 +226,7 @@ Experiments show that our framework significantly improves zero-shot performance
                     <center><img class="center" src="./resources/LLaVA.png" width="100%"></center>
                     <p>
                       <strong style="font-weight: 900">Comparison of LLaVA-1.5 performance.</strong style="font-weight: 900">
-                        We directly replace the original OpenAI-CLIP-Large-14 with the CLIPS-Large-14 and use LLaMA-3 as the language model. Our method achieves strong performance improvements across multiple metrics, effectively enhancing the cross-modal understanding capability of MLLM.
+                        We directly replace the original OpenAI-CLIP-Large-14 with the CLIPS-Large-14 and use LLaMA-3 as the language model. The results demonstrate that integrating CLIPS significantly enhances LLaVA's performance across multiple metrics compared to using the original OpenAI-CLIP visual encoder.
                     </p>
                   </div>
                 </div>
@@ -242,7 +242,7 @@ Experiments show that our framework significantly improves zero-shot performance
                   <h2 class="title is-3">Model Zoo</h2>
                   <div class="content has-text-justified">
                     <p>
-                      We will release the model soon!
+                      We have released CLIPS-Large-14, and more models will be available soon!
 
                     <h3>Models</h3>
                     <table>
@@ -251,11 +251,11 @@ Experiments show that our framework significantly improves zero-shot performance
                         <th>url</th>
                       </tr>
                       <tr>
-                        <td>CLIPS-Large-14</td>
-                        <td>Coming Soon...</td>
+                        <td>CLIPS-Large-14-336</td>
+                        <td><a href="https://huggingface.co/UCSC-VLAA/ViT-L-14-CLIPS-Recap-DataComp-1B" target="_blank">https://huggingface.co/UCSC-VLAA/ViT-L-14-CLIPS-Recap-DataComp-1B</a></td>
                       </tr>
                       <tr>
-                        <td>CLIPS-Huge-14</td>
+                        <td>CLIPS-Huge-14-336</td>
                         <td>Coming Soon...</td>
                       </tr>
                     </table>
@@ -280,14 +280,14 @@ Experiments show that our framework significantly improves zero-shot performance
               </div>
             </section>
 
-<section class="section" id="BibTeX">
+<!-- <section class="section" id="BibTeX">
   <div class="container is-max-desktop content">
     <h2 class="title">BibTeX</h2>
     <pre><code>
 -----------------------------
     </code></pre>
   </div>
-</section>
+</section> -->
 
 
 <footer class="footer">
