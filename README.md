@@ -21,7 +21,7 @@
 ## **Proposed Method**
 
 ### **CLIPS Pipeline**
-<img src="./docs/resources/method.jpg" alt="Method Pipeline" style="width: 40%; display: block; margin: 0 auto;" />
+![Method Pipeline](./docs/resources/method.jpg)
 
 Previous works show that noisy, web-crawled image-text pairs may limit vision-language pretraining like CLIP and propose learning with synthetic captions as a promising alternative. Our work continues this effort, introducing two simple yet effective designs to better leverage richly described synthetic captions:
 
@@ -35,28 +35,28 @@ Our method achieves **state-of-the-art (SOTA)** results in zero-shot image-text 
 ## **Key Results**
 
 ### **Inverse Effect with Synthetic Captions**
-<img src="./docs/resources/mask_strategy.jpg" alt="Inverse Effect Visualization" style="width: 50%; display: block; margin: 0 auto;" />
+![Inverse Effect Visualization](./docs/resources/mask_strategy.jpg)
 
 Visualization of four different token reduction strategies. These strategies can improve the model's learning efficiency on synthetic captions to varying degrees. Among these strategies, the sub-caption and block mask perform best.
 
 ---
 
 ### **Zero-Shot Cross-Modal Retrieval**
-<img src="./docs/resources/retrieval.png" alt="Zero-Shot Retrieval Results" style="width: 50%; display: block; margin: 0 auto;" />
+![Zero-Shot Retrieval Results](./docs/resources/retrieval.png)
 
 Our method consistently achieves superior performance across all benchmarks and model sizes, yielding significant improvements over the baselines.
 
 ---
 
 ### **Comparison with State-of-the-Art Methods**
-<img src="./docs/resources/sota.png" alt="SOTA Comparison" style="width: 50%; display: block; margin: 0 auto;" />
+![SOTA Comparison](./docs/resources/sota.png)
 
 With increased computational resources and scaling, our best model further achieves 76.4% and 96.6% R@1 text retrieval performance on MSCOCO and Flickr30K respectively, and 57.2% and 83.9% R@1 image retrieval performance on the same datasets, setting new state-of-the-art (SOTA) results.
 
 ---
 
 ### **CLIPS in LLaVA**
-<img src="./docs/resources/LLaVA.png" alt="LLaVA Results" style="width: 50%; display: block; margin: 0 auto;" />
+![LLaVA Results](./docs/resources/LLaVA.png)
 
 Replacing OpenAI-CLIP with **CLIPS** significantly boosts LLaVA's performance across various benchmarks.
 
