@@ -20,10 +20,6 @@ Our method achieves **state-of-the-art (SOTA)** results in zero-shot image-text 
 
 ---
 
-## **Proposed Method**
-
----
-
 ## **Key Results**
 
 ### **Inverse Effect with Synthetic Captions**
