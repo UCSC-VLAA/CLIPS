@@ -1,2 +1,2 @@
-# HQ-Edit
-[https://thefllood.github.io/HQEdit_web/](https://thefllood.github.io/HQEdit_web/)
+# CLIPS
+[https://ucsc-vlaa.github.io/CLIPS/](https://ucsc-vlaa.github.io/CLIPS/)
