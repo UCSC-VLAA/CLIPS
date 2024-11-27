@@ -99,6 +99,7 @@ This pytorch repo is built on [OpenCLIP](https://github.com/mlfoundations/open_c
 Many thanks to the awesome works from the open-source community!
 
 We would like to thank TPU Research Cloud (TRC) program, Google Cloud Research Credits program, and AWS Cloud Credit for Research program for supporting our computing needs.
+
 ---
 
 ## **Citation**
