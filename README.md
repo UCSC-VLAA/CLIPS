@@ -15,7 +15,7 @@ Our method achieves **state-of-the-art (SOTA)** results in zero-shot image-text 
 ---
 
 ## **Links**
-- [📄 Paper (arXiv)](https://arxiv.org/abs/2406.08478)  
+- [📄 Paper (arXiv)](https://arxiv.org/abs/2411.16828)  
 - [🤗 Pretrained Model on HuggingFace](https://huggingface.co/UCSC-VLAA/ViT-L-14-CLIPS-Recap-DataComp-1B)  
 - [🌐 Project Page](https://ucsc-vlaa.github.io/CLIPS/)
 
@@ -99,16 +99,19 @@ This pytorch repo is built on [OpenCLIP](https://github.com/mlfoundations/open_c
 Many thanks to the awesome works from the open-source community!
 
 We would like to thank TPU Research Cloud (TRC) program, Google Cloud Research Credits program, and AWS Cloud Credit for Research program for supporting our computing needs.
-<!-- ---
+---
 
 ## **Citation**
 
 If you use our work, please cite it:
 
 ```bibtex
-@article{liu2024clips,
-  title={CLIPS: An Enhanced CLIP Framework for Learning with Synthetic Captions},
-  author={Liu, Yanqing and Li, Xianhang and Wang, Zeyu and Zhao, Bingchen and Xie, Cihang},
-  journal={arXiv preprint arXiv:2406.08478},
-  year={2024}
-} -->
+@misc{liu2024clipsenhancedclipframework,
+      title={CLIPS: An Enhanced CLIP Framework for Learning with Synthetic Captions}, 
+      author={Yanqing Liu and Xianhang Li and Zeyu Wang and Bingchen Zhao and Cihang Xie},
+      year={2024},
+      eprint={2411.16828},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2411.16828}, 
+}
