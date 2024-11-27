@@ -1,6 +1,6 @@
 # **CLIPS**
 
-**Official implementation of the paper "_CLIPS: An Enhanced CLIP Framework for Learning with Synthetic Captions_".**
+**Official implementation of the paper "[_CLIPS: An Enhanced CLIP Framework for Learning with Synthetic Captions_](https://arxiv.org/abs/2411.16828)".**
 
 
 ![Method Pipeline](./docs/resources/method.jpg)
