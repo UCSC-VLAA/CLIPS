@@ -15,6 +15,7 @@ import ftfy
 import numpy as np
 import regex as re
 import torch
+import sys
 
 # https://stackoverflow.com/q/62691279
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -400,6 +401,40 @@ def get_reduction_mask_fn(type: str):
         return syntax_mask_tokenize  # randomly drop prioritized by syntax
 
 
+from tokenizers import BertWordPieceTokenizer
+
+class CustomTokenizer:
+    """Custom tokenizer using WordPiece-based subword tokenization"""
+    
+    def __init__(self, vocab_file, context_length=512, bos_token=101, eos_token=102, class_token=103, pad_token=0, sep_token_id=102):
+        self.tokenizer = BertWordPieceTokenizer(lowercase=True)
+        self.tokenizer = self.tokenizer.from_file(vocab_file)
+        self.context_length = context_length
+        self.bos_token = bos_token
+        self.eos_token = eos_token
+        self.class_token = class_token
+        self.pad_token = pad_token
+        self.sep_token_id = sep_token_id
+
+    def tokenize(self, text):
+        encoding = self.tokenizer.encode(text, add_special_tokens=False)
+        tokens = encoding.ids[:self.context_length - 3] 
+        return [self.bos_token] + tokens + [self.eos_token]
+
+    def batch_encode_plus(self, texts, return_tensors='pt', max_length=None, padding='max_length', truncation=True):
+        max_length = max_length or self.context_length
+        encoded = [self.tokenize(text) for text in texts]
+        import torch
+        return {
+            'input_ids': torch.tensor([self.pad_and_add_class_token(e, max_length) for e in encoded])
+        }
+
+    def pad_and_add_class_token(self, encoded_text, max_length):
+        if len(encoded_text) < max_length - 1:
+            encoded_text += [self.pad_token] * (max_length - 1 - len(encoded_text))
+        return encoded_text + [self.class_token]
+
+
 class HFTokenizer:
     """HuggingFace tokenizer wrapper"""
 
@@ -412,8 +447,12 @@ class HFTokenizer:
             language: Optional[str] = None,
             **kwargs
     ):
-        from transformers import AutoTokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, **kwargs)
+        vocab_file = './vocab.txt'
+        # vocab_dict = load_vocab(vocab_file)
+        self.tokenizer = CustomTokenizer(vocab_file, context_length=80, bos_token=1, eos_token=2, class_token=101, pad_token=0)
+        print("load custom tokenizer")
+        # from transformers import AutoTokenizer
+        # self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, **kwargs)
         set_lang_fn = getattr(self.tokenizer, 'set_src_lang_special_tokens', None)
         if callable(set_lang_fn):
             self.set_lang_fn = set_lang_fn
@@ -431,25 +470,19 @@ class HFTokenizer:
         # adding lower (for case-sensitive tokenizers) will make it more robust but less sensitive to nuance
         if isinstance(texts, str):
             texts = [texts]
-
         context_length = context_length or self.context_length
         assert context_length, 'Please set a valid context length in class init or call.'
 
         texts = [self.clean_fn(text) for text in texts]
-        input_ids = self.tokenizer.batch_encode_plus(
+        encoded_outputs = self.tokenizer.batch_encode_plus(
             texts,
             return_tensors='pt',
             max_length=context_length,
             padding='max_length',
             truncation=True,
-        ).input_ids
-
-        if self.strip_sep_token:
-            input_ids = torch.where(
-                input_ids == self.tokenizer.sep_token_id,
-                torch.zeros_like(input_ids),
-                input_ids,
-            )
+        )
+        
+        input_ids = encoded_outputs['input_ids']
 
         return input_ids
     
