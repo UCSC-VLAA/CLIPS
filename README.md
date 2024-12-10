@@ -55,7 +55,8 @@ Replacing OpenAI-CLIP with **CLIPS** significantly boosts LLaVA's performance ac
 
 | Model          | Link                                                                                     |
 |----------------|------------------------------------------------------------------------------------------|
-| CLIPS-Large-14 | [🤗 HuggingFace Model](https://huggingface.co/UCSC-VLAA/ViT-L-14-CLIPS-Recap-DataComp-1B) |
+| CLIPS-Large-14-224 | [🤗 HuggingFace Model]([https://huggingface.co/UCSC-VLAA/ViT-L-14-CLIPS-Recap-DataComp-1B](https://huggingface.co/UCSC-VLAA/ViT-L-14-CLIPS-224-Recap-DataComp-1B)) |
+| CLIPS-Large-14-336 | [🤗 HuggingFace Model](https://huggingface.co/UCSC-VLAA/ViT-L-14-CLIPS-Recap-DataComp-1B) |
 | CLIPS-Huge-14  | Coming Soon...                                                                          |
 
 ## **Model Usage**
