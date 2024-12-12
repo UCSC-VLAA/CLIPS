@@ -94,7 +94,10 @@ with torch.no_grad(), torch.cuda.amp.autocast():
 
 print("Label probs:", text_probs)  # prints: [[0., 0., 0., 1.0]]
 ```
-#### Note: Due to differences in the default epsilon values for LayerNorm initialization between JAX and PyTorch, we made some modifications in open_clip/transformer.py to align the model's behavior.
+#### Note:
+#### 1. We made modifications to the tokenizer implementation in open_clip/tokenizer.py.
+#### 2. Due to differences in the default epsilon values for LayerNorm initialization between JAX and PyTorch, we adjusted the default epsilon value in open_clip/transformer.py to align the model's behavior.
+
 ## Acknowledgement
 
 This pytorch repo is built on [OpenCLIP](https://github.com/mlfoundations/open_clip). 
