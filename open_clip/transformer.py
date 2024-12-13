@@ -2,7 +2,7 @@ from collections import OrderedDict
 import math
 from typing import Callable, List, Optional, Sequence, Tuple, Union
 from functools import partial
-import sys
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -455,7 +455,7 @@ class VisionTransformer(nn.Module):
             act_layer: Callable = nn.GELU,
             norm_layer: Callable = LayerNorm,
             output_tokens: bool = False,
-            eps: float = 1e-6  # Add eps as a parameter
+            eps: float = 1e-5  # Add eps as a parameter
     ):
         super().__init__()
         assert pool_type in ('tok', 'avg', 'none')
@@ -596,6 +596,12 @@ class VisionTransformer(nn.Module):
     def set_grad_checkpointing(self, enable=True):
         self.transformer.grad_checkpointing = enable
 
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        # for timm optimizers, 1d params like logit_scale, logit_bias, ln/bn scale, biases are excluded by default
+        no_wd = {'positional_embedding', 'class_embedding'}
+        return no_wd
+
     def _global_pool(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         if self.pool_type == 'avg':
             pooled, tokens = x[:, 1:].mean(dim=1), x[:, 1:]
@@ -678,16 +684,17 @@ class TextTransformer(nn.Module):
             layers: int = 12,
             mlp_ratio: float = 4.0,
             ls_init_value: float = None,
-            output_dim: int = 512,
-            embed_cls: bool = True,
+            output_dim: Optional[int] = 512,
+            embed_cls: bool = False,
             no_causal_mask: bool = False,
             pad_id: int = 0,
             pool_type: str = 'argmax',
+            proj_type: str = 'linear',
             proj_bias: bool = False,
             act_layer: Callable = nn.GELU,
-            norm_layer: Callable = LayerNorm(normalized_shape=512, eps=1e-6),
+            norm_layer: Callable = LayerNorm,
             output_tokens: bool = False,
-            eps: float = 1e-6  # Add eps as a parameter
+            eps: float = 1e-5  # Add eps as a parameter
     ):
         super().__init__()
         assert pool_type in ('first', 'last', 'argmax', 'none')
@@ -701,12 +708,11 @@ class TextTransformer(nn.Module):
         self.pool_type = pool_type
 
         self.token_embedding = nn.Embedding(vocab_size, width)
-        self.embed_cls = True
-        # if embed_cls:
-        #     self.cls_emb = nn.Parameter(torch.empty(width))
-        #     self.num_pos += 1
-        # else:
-        #     self.cls_emb = None
+        if embed_cls:
+            self.cls_emb = nn.Parameter(torch.empty(width))
+            self.num_pos += 1
+        else:
+            self.cls_emb = None
         self.positional_embedding = nn.Parameter(torch.empty(self.num_pos, width))
         self.transformer = Transformer(
             width=width,
@@ -724,18 +730,21 @@ class TextTransformer(nn.Module):
         else:
             self.register_buffer('attn_mask', self.build_causal_mask(), persistent=False)
 
-        if proj_bias:
-            self.text_projection = nn.Linear(width, output_dim)
+        if proj_type == 'none' or not output_dim:
+            self.text_projection = None
         else:
-            self.text_projection = nn.Parameter(torch.empty(width, output_dim))
+            if proj_bias:
+                self.text_projection = nn.Linear(width, output_dim)
+            else:
+                self.text_projection = nn.Parameter(torch.empty(width, output_dim))
 
         self.init_parameters()
 
     def init_parameters(self):
         nn.init.normal_(self.token_embedding.weight, std=0.02)
         nn.init.normal_(self.positional_embedding, std=0.01)
-        # if self.cls_emb is not None:
-        #     nn.init.normal_(self.cls_emb, std=0.01)
+        if self.cls_emb is not None:
+            nn.init.normal_(self.cls_emb, std=0.01)
 
         proj_std = (self.transformer.width ** -0.5) * ((2 * self.transformer.layers) ** -0.5)
         attn_std = self.transformer.width ** -0.5
@@ -758,6 +767,14 @@ class TextTransformer(nn.Module):
     def set_grad_checkpointing(self, enable=True):
         self.transformer.grad_checkpointing = enable
 
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        # for timm optimizers, 1d params like logit_scale, logit_bias, ln/bn scale, biases are excluded by default
+        no_wd = {'positional_embedding'}
+        if self.cls_emb is not None:
+            no_wd.add('cls_emb')
+        return no_wd
+
     def build_causal_mask(self):
         # lazily create causal attention mask, with full attention between the tokens
         # pytorch uses additive attention mask; fill with -inf
@@ -765,8 +782,6 @@ class TextTransformer(nn.Module):
         mask.fill_(float("-inf"))
         mask.triu_(1)  # zero out the lower diagonal
         return mask
-        # mask = torch.tril(torch.ones(self.num_pos, self.num_pos))  # Lower triangular matrix with 1s
-        # return mask
 
     def build_cls_mask(self, text, cast_dtype: torch.dtype):
         cls_mask = (text != self.pad_id).unsqueeze(1)
@@ -783,24 +798,22 @@ class TextTransformer(nn.Module):
 
         x = self.token_embedding(text).to(cast_dtype)  # [batch_size, n_ctx, d_model]
         attn_mask = self.attn_mask
-        # if self.cls_emb is not None:
-        #     seq_len += 1
-        #     x = torch.cat([x, _expand_token(self.cls_emb, x.shape[0])], dim=1)
-        #     cls_mask = self.build_cls_mask(text, cast_dtype)
-        #     if attn_mask is not None:
-        #         attn_mask = attn_mask[None, :seq_len, :seq_len] + cls_mask[:, :seq_len, :seq_len]
+        if self.cls_emb is not None:
+            seq_len += 1
+            x = torch.cat([x, _expand_token(self.cls_emb, x.shape[0])], dim=1)
+            cls_mask = self.build_cls_mask(text, cast_dtype)
+            if attn_mask is not None:
+                attn_mask = attn_mask[None, :seq_len, :seq_len] + cls_mask[:, :seq_len, :seq_len]
 
         x = x + self.positional_embedding[:seq_len].to(cast_dtype)
         x = self.transformer(x, attn_mask=attn_mask)
 
         # x.shape = [batch_size, n_ctx, transformer.width]
-        self.embed_cls = True
-        if self.embed_cls:
+        if self.cls_emb is not None:
             # presence of appended cls embed (CoCa) overrides pool_type, always take last token
             pooled, tokens = text_global_pool(x, pool_type='last')
             pooled = self.ln_final(pooled)  # final LN applied after pooling in this case
         else:
-            print("no embed cls")
             x = self.ln_final(x)
             pooled, tokens = text_global_pool(x, text, pool_type=self.pool_type)
 
