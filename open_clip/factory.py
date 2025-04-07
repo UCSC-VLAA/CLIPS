@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import sys
 import re
 import warnings
 from copy import deepcopy
@@ -11,14 +12,14 @@ from typing import Any, Dict, Optional, Tuple, Union
 import torch
 
 from .convert import convert_state_dict
-from .model import CLIP, CustomTextCLIP, convert_weights_to_lp, convert_to_custom_text_state_dict,\
+from .model import CLIPS, CLIP, CustomTextCLIP, convert_weights_to_lp, convert_to_custom_text_state_dict,\
     resize_pos_embed, get_cast_dtype, resize_text_pos_embed, set_model_preprocess_cfg
 from .coca_model import CoCa
-from .loss import ClipLoss, DistillClipLoss, CoCaLoss, SigLipLoss
+from .loss import ClipLoss, DistillClipLoss, CoCaLoss, CLIPSLoss, SigLipLoss
 from .pretrained import is_pretrained_cfg, get_pretrained_cfg, download_pretrained,\
     list_pretrained_tags_by_model, download_pretrained_from_hf
 from .transform import image_transform_v2, AugmentationCfg, PreprocessCfg, merge_preprocess_dict, merge_preprocess_kwargs
-from .tokenizer import HFTokenizer, SimpleTokenizer, CLIPS_Tokenizer, DEFAULT_CONTEXT_LENGTH
+from .tokenizer import HFTokenizer, SimpleTokenizer, CLIPS_Tokenizer, SigLipTokenizer, DEFAULT_CONTEXT_LENGTH
 
 HF_HUB_PREFIX = 'hf-hub:'
 _MODEL_CONFIG_PATHS = [Path(__file__).parent / f"model_configs/"]
@@ -43,9 +44,11 @@ def _rescan_model_configs():
 
     for cf in config_files:
         with open(cf, 'r') as f:
-            model_cfg = json.load(f)
+            raw_cfg = json.load(f)
+            model_cfg = raw_cfg.get('model_cfg', raw_cfg)
             if all(a in model_cfg for a in ('embed_dim', 'vision_cfg', 'text_cfg')):
                 _MODEL_CONFIGS[cf.stem] = model_cfg
+
 
     _MODEL_CONFIGS = {k: v for k, v in sorted(_MODEL_CONFIGS.items(), key=lambda x: _natural_key(x[0]))}
 
@@ -122,7 +125,8 @@ def get_tokenizer(
     if context_length is None:
         context_length = text_config.get('context_length', DEFAULT_CONTEXT_LENGTH)
 
-    if 'hf_tokenizer_name' in text_config:
+    model_name = model_name.lower()
+    if text_config.get('hf_tokenizer_name', ''):
         if 'CLIPS' in model_name:
             tokenizer = CLIPS_Tokenizer(
             context_length=context_length,
@@ -134,6 +138,13 @@ def get_tokenizer(
                 context_length=context_length,
                 **tokenizer_kwargs,
             )
+    elif 'siglip' in model_name:
+        tn = 'gemma' if 'siglip2'  in model_name else 'mc4' if 'i18n' in model_name else 'c4-en'
+        tokenizer = SigLipTokenizer(
+            tn,
+            context_length=context_length,
+            # **tokenizer_kwargs,
+        )
     else:
         tokenizer = SimpleTokenizer(
             context_length=context_length,
@@ -345,6 +356,8 @@ def create_model(
             model = CoCa(**model_cfg, cast_dtype=cast_dtype)
         else:
             model = CustomTextCLIP(**model_cfg, cast_dtype=cast_dtype)
+    elif 'decoder_cfg' in model_cfg:
+        model = CLIPS(**model_cfg, cast_dtype=cast_dtype)
     else:
         model = CLIP(**model_cfg, cast_dtype=cast_dtype)
 
@@ -439,6 +452,17 @@ def create_loss(args):
         )
     elif "coca" in args.model.lower():
         return CoCaLoss(
+            caption_loss_weight=args.coca_caption_loss_weight,
+            clip_loss_weight=args.coca_contrastive_loss_weight,
+            local_loss=args.local_loss,
+            gather_with_grad=args.gather_with_grad,
+            cache_labels=True,
+            rank=args.rank,
+            world_size=args.world_size,
+            use_horovod=args.horovod,
+        )
+    elif "CLIPS" in args.model:
+        return CLIPSLoss(
             caption_loss_weight=args.coca_caption_loss_weight,
             clip_loss_weight=args.coca_contrastive_loss_weight,
             local_loss=args.local_loss,

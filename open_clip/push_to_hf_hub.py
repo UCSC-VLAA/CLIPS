@@ -1,6 +1,5 @@
 import argparse
 import json
-import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Optional, Tuple, Union
@@ -28,13 +27,9 @@ try:
 except ImportError:
     _has_safetensors = False
 
+from .constants import HF_WEIGHTS_NAME, HF_SAFE_WEIGHTS_NAME, HF_CONFIG_NAME
 from .factory import create_model_from_pretrained, get_model_config, get_tokenizer
-from .tokenizer import HFTokenizer
-
-# Default name for a weights file hosted on the Huggingface Hub.
-HF_WEIGHTS_NAME = "open_clip_pytorch_model.bin"  # default pytorch pkl
-HF_SAFE_WEIGHTS_NAME = "open_clip_model.safetensors"  # safetensors version
-HF_CONFIG_NAME = 'open_clip_config.json'
+from .tokenizer import HFTokenizer, SigLipTokenizer
 
 
 def save_config_for_hf(
@@ -100,7 +95,7 @@ def push_to_hf_hub(
     model_card: Optional[dict] = None,
     safe_serialization: Union[bool, str] = 'both',
 ):
-    if not isinstance(tokenizer, HFTokenizer):
+    if not isinstance(tokenizer, (HFTokenizer, SigLipTokenizer)):
         # FIXME this makes it awkward to push models with new tokenizers, come up with better soln.
         # default CLIP tokenizers use https://huggingface.co/openai/clip-vit-large-patch14
         tokenizer = HFTokenizer('openai/clip-vit-large-patch14')
@@ -119,6 +114,7 @@ def push_to_hf_hub(
     try:
         repo_files = set(list_repo_files(repo_id))
         repo_exists = True
+        print('Repo exists', repo_files)
     except Exception as e:
         print('Repo does not exist', e)
 
@@ -193,7 +189,7 @@ def push_pretrained_to_hf_hub(
     tokenizer = get_tokenizer(model_name)
     if hf_tokenizer_self:
         # make hf tokenizer config in the uploaded model point to self instead of original location
-        model_config['text']['hf_tokenizer_name'] = repo_id
+        model_config['text_cfg']['hf_tokenizer_name'] = repo_id
 
     push_to_hf_hub(
         model=model,
@@ -316,6 +312,7 @@ if __name__ == "__main__":
         image_std=args.image_std,
         image_interpolation=args.image_interpolation,
         image_resize_mode=args.image_resize_mode,
+        hf_tokenizer_self=args.hf_tokenizer_self,
     )
 
     print(f'{args.model} saved.')

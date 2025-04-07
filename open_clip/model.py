@@ -5,8 +5,9 @@ Adapted from https://github.com/openai/CLIP. Originally MIT License, Copyright (
 import copy
 import logging
 import math
+import sys
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -18,7 +19,7 @@ from functools import partial
 from .hf_model import HFTextEncoder
 from .modified_resnet import ModifiedResNet
 from .timm_model import TimmModel
-from .transformer import LayerNormFp32, LayerNorm, QuickGELU, Attention, VisionTransformer, TextTransformer,\
+from .transformer import LayerNormFp32, LayerNorm, QuickGELU, Attention, VisionTransformer, TextTransformer, TextDecoder,\
     text_global_pool
 from .utils import to_2tuple
 
@@ -218,6 +219,312 @@ def _build_text_tower(
         )
     return text
 
+@dataclass
+class MultimodalCfg(CLIPTextCfg):
+    mlp_ratio: int = 4
+    dim_head: int = 64
+    heads: int = 8
+    n_queries: int = 256
+    attn_pooler_heads: int = 8
+    num_learnable_tokens: int = 128
+
+def _build_text_decoder_tower(
+        embed_dim,
+        multimodal_cfg,
+        quick_gelu: bool = False,
+        cast_dtype: Optional[torch.dtype] = None,
+):
+    multimodal_cfg = MultimodalCfg(**multimodal_cfg) if isinstance(multimodal_cfg, dict) else multimodal_cfg
+    act_layer = QuickGELU if quick_gelu else nn.GELU
+    norm_layer = (
+        LayerNormFp32 if cast_dtype in (torch.float16, torch.bfloat16) else LayerNorm
+    )
+    if multimodal_cfg.norm_kwargs:
+        norm_layer = partial(norm_layer, **multimodal_cfg.norm_kwargs)
+    if multimodal_cfg.act_kwargs is not None:
+        act_layer = partial(act_layer, **multimodal_cfg.act_kwargs)
+    decoder = TextDecoder(
+        vocab_size=multimodal_cfg.vocab_size,
+        width=multimodal_cfg.width,
+        heads=multimodal_cfg.heads,
+        layers=multimodal_cfg.layers,
+        mlp_ratio=multimodal_cfg.mlp_ratio,
+        ls_init_value=multimodal_cfg.ls_init_value,
+        output_dim=embed_dim,
+        embed_cls=multimodal_cfg.embed_cls,
+        no_causal_mask=multimodal_cfg.no_causal_mask,
+        pad_id=multimodal_cfg.pad_id,
+        pool_type=multimodal_cfg.pool_type,
+        proj_type=multimodal_cfg.proj_type,
+        proj_bias=multimodal_cfg.proj_bias,
+        output_tokens=multimodal_cfg.output_tokens,
+        act_layer=act_layer,
+        norm_layer=norm_layer,
+    )
+
+    return decoder
+
+class CLIPS(nn.Module):
+    output_dict: torch.jit.Final[bool]
+
+    def __init__(
+            self,
+            embed_dim: int,
+            vision_cfg: CLIPVisionCfg,
+            text_cfg: CLIPTextCfg,
+            decoder_cfg: MultimodalCfg,
+            quick_gelu: bool = False,
+            init_logit_scale: float = np.log(1 / 0.07),
+            init_logit_bias: Optional[float] = None,
+            nonscalar_logit_scale: bool = False,
+            cast_dtype: Optional[torch.dtype] = None,
+            output_dict: bool = False,
+    ):
+        super().__init__()
+        decoder_cfg = MultimodalCfg(**decoder_cfg) if isinstance(decoder_cfg, dict) else decoder_cfg
+        text_cfg = CLIPTextCfg(**text_cfg) if isinstance(text_cfg, dict) else text_cfg
+        vision_cfg = CLIPVisionCfg(**vision_cfg) if isinstance(vision_cfg, dict) else vision_cfg
+        self.output_dict = output_dict
+        self.visual = _build_vision_tower(embed_dim, vision_cfg, quick_gelu, cast_dtype)
+
+        text = _build_text_tower(embed_dim, text_cfg, quick_gelu, cast_dtype)
+        self.text_encoder = text.transformer
+        vocab_size = (
+            text_cfg.vocab_size  # for hf models
+            if hasattr(text_cfg, "hf_model_name") and text_cfg.hf_model_name is not None
+            else text_cfg.vocab_size
+        )
+        self.learnable_tokens = nn.Parameter(
+            torch.randn(decoder_cfg.num_learnable_tokens, decoder_cfg.width)
+        )
+        self.text_decoder = _build_text_decoder_tower(
+            vocab_size,
+            multimodal_cfg=decoder_cfg,
+            quick_gelu=quick_gelu,
+            cast_dtype=cast_dtype,
+        )
+        self.context_length = text.context_length
+        self.vocab_size = text.vocab_size
+        self.token_embedding = text.token_embedding
+        self.positional_embedding = text.positional_embedding
+        self.ln_final = text.ln_final
+        self.text_projection = text.text_projection
+        self.text_pool_type = text.pool_type
+        self.register_buffer('attn_mask', text.attn_mask, persistent=False)
+
+        lshape = [1] if nonscalar_logit_scale else []
+        self.logit_scale = nn.Parameter(torch.ones(lshape) * init_logit_scale)
+        if init_logit_bias is not None:
+            self.logit_bias = nn.Parameter(torch.ones(lshape) * init_logit_bias)
+        else:
+            self.logit_bias = None
+
+    def lock_image_tower(self, unlocked_groups=0, freeze_bn_stats=False):
+        # lock image tower as per LiT - https://arxiv.org/abs/2111.07991
+        self.visual.lock(unlocked_groups=unlocked_groups, freeze_bn_stats=freeze_bn_stats)
+
+    @torch.jit.ignore
+    def set_grad_checkpointing(self, enable=True):
+        self.visual.set_grad_checkpointing(enable)
+        self.transformer.grad_checkpointing = enable
+
+    @torch.jit.ignore
+    def no_weight_decay(self):
+        # for timm optimizers, 1d params like logit_scale, logit_bias, ln/bn scale, biases are excluded by default
+        no_wd = {'positional_embedding'}
+        if hasattr(self.visual, 'no_weight_decay'):
+            for n in self.visual.no_weight_decay():
+                no_wd.add('visual.' + n)
+        return no_wd
+
+    def _encode_image(self, images, normalize: bool = True):
+        image_latent, tokens_embs = self.visual(images)
+        image_latent = F.normalize(image_latent, dim=-1) if normalize else image_latent
+        return image_latent, tokens_embs
+
+    def _encode_text(self, text, normalize: bool = True):
+        text_latent, token_emb = self.text_encoder(text)
+        text_latent = F.normalize(text_latent, dim=-1) if normalize else text_latent
+        return text_latent, token_emb
+
+    def encode_image(self, images, normalize: bool = True):
+        image_latent, _ = self._encode_image(images, normalize=normalize)
+        return image_latent
+
+    def encode_text(self, text, normalize: bool = True):
+        text_latent, _ = self._encode_text(text, normalize=normalize)
+        return text_latent
+
+    def get_logits(self, image, text):
+        image_features = self.encode_image(image, normalize=True)
+        text_features = self.encode_text(text, normalize=True)
+        image_logits = self.logit_scale.exp() * image_features @ text_features.T
+        if self.logit_bias is not None:
+            image_logits += self.logit_bias
+        text_logits = image_logits.T
+        return image_logits, text_logits
+
+    def forward_intermediates(
+            self,
+            image: Optional[torch.Tensor] = None,
+            text: Optional[torch.Tensor] = None,
+            image_indices: Optional[Union[int, List[int]]] = None,
+            text_indices: Optional[Union[int, List[int]]] = None,
+            stop_early: bool = False,
+            normalize: bool = True,
+            normalize_intermediates: bool = False,
+            intermediates_only: bool = False,
+            image_output_fmt: str = 'NCHW',
+            image_output_extra_tokens: bool = False,
+            text_output_fmt: str = 'NLC',
+            text_output_extra_tokens: bool = False,
+            output_logits: bool = False,
+            output_logit_scale_bias: bool = False,
+    ) -> Dict[str, Union[torch.Tensor, List[torch.Tensor]]]:
+        """ Forward features that returns intermediates.
+
+        Args:
+            image: Input image tensor
+            text: Input text tensor
+            image_indices: For image tower, Take last n blocks if int, all if None, select matching indices if sequence
+            text_indices: Take last n blocks if int, all if None, select matching indices if sequence
+            stop_early: Stop iterating over blocks when last desired intermediate hit
+            normalize_intermediates: Apply final norm layer to all intermediates
+            normalize: L2 Normalize final features
+            intermediates_only: Only return intermediate features, do not return final features
+            image_output_fmt: Shape of intermediate image feature outputs
+            image_output_extra_tokens: Return both prefix and spatial intermediate tokens
+            text_output_fmt: Shape of intermediate text feature outputs (ignored for this model)
+            text_output_extra_tokens: Return both prefix and spatial intermediate tokens (ignored for this model)
+            output_logits: Include logits in output
+            output_logit_scale_bias: Include the logit scale bias in the output
+        Returns:
+
+        """
+        output = {}
+        if intermediates_only:
+            # intermediates only disables final feature normalization, and include logits
+            normalize = False
+            output_logits = False
+        if output_logits:
+            assert image is not None and text is not None, 'Both image and text inputs are required to compute logits'
+
+        if image is not None:
+            image_output = self.visual.forward_intermediates(
+                image,
+                indices=image_indices,
+                stop_early=stop_early,
+                normalize_intermediates=normalize_intermediates,
+                intermediates_only=intermediates_only,
+                output_fmt=image_output_fmt,
+                output_extra_tokens=image_output_extra_tokens,
+            )
+            if normalize and "image_features" in image_output:
+                image_output["image_features"] = F.normalize(image_output["image_features"], dim=-1)
+            output.update(image_output)
+
+        if text is not None:
+            cast_dtype = self.transformer.get_cast_dtype()
+            x = self.token_embedding(text).to(cast_dtype)  # [batch_size, n_ctx, d_model]
+            x = x + self.positional_embedding.to(cast_dtype)
+            x, intermediates = self.transformer.forward_intermediates(
+                x,
+                attn_mask=self.attn_mask,
+                indices=text_indices
+            )
+            if normalize_intermediates:
+                intermediates = [self.ln_final(xi) for xi in intermediates]
+
+            # NOTE this model doesn't support cls embed in text transformer, no need for extra intermediate tokens
+            output["text_intermediates"] = intermediates
+
+            if not intermediates_only:
+                x = self.ln_final(x)  # [batch_size, n_ctx, transformer.width]
+                x = text_global_pool(x, text, self.text_pool_type)
+                if self.text_projection is not None:
+                    if isinstance(self.text_projection, nn.Linear):
+                        x = self.text_projection(x)
+                    else:
+                        x = x @ self.text_projection
+                if normalize:
+                    x = F.normalize(x, dim=-1)
+                output["text_features"] = x
+
+        logit_scale_exp = self.logit_scale.exp() if output_logits or output_logit_scale_bias else None
+
+        if output_logits:
+            image_logits = logit_scale_exp * output["image_features"] @ output["text_features"].T
+            if self.logit_bias is not None:
+                image_logits += self.logit_bias
+            text_logits = image_logits.T
+            output["image_logits"] = image_logits
+            output["text_logits"] = text_logits
+
+        if output_logit_scale_bias:
+            output["logit_scale"] = logit_scale_exp
+            if self.logit_bias is not None:
+                output['logit_bias'] = self.logit_bias
+
+        return output
+
+    def build_cross_causal_mask(fused_len, token_len, device):
+        total_len = fused_len + token_len
+        mask = torch.zeros((total_len, total_len), dtype=torch.bool, device=device)
+
+        mask[:fused_len, fused_len:] = True
+
+        token_causal = torch.triu(torch.ones((token_len, token_len), dtype=torch.bool, device=device), diagonal=1)
+        mask[fused_len:, fused_len:] = token_causal
+        return mask
+
+    def forward(
+            self,
+            image,
+            text: Optional[torch.Tensor] = None,
+            image_latent: Optional[torch.Tensor] = None,
+            image_embs: Optional[torch.Tensor] = None,
+            output_labels: bool = True,
+    ):
+        if image_latent is None or image_embs is None:
+            image_latent, image_embs = self._encode_image(image)
+
+        if text is None:
+            return {"image_features": image_latent, "image_embs": image_embs}
+
+        text_latent, token_embs = self._encode_text(text)
+
+        # FIXME this isn't an ideal solution, would like to improve -RW
+        labels: Optional[torch.Tensor] = text[:, 1:] if output_labels else None
+        if output_labels:
+            # align text_embs and thus logits with labels for teacher-forcing caption loss
+            token_embs = token_embs[:, :-1]
+
+        batch_size = image_embs.size(0)
+
+        # concatenate along sequence dimension (dim=1)
+        half_batch = token_embs.shape[0] // 2
+        token_embs = token_embs[:half_batch]
+        fused_embs = torch.cat([image_embs, token_embs], dim=1)
+
+        token_embs = self.learnable_tokens.unsqueeze(0).expand(batch_size, -1, -1)
+
+        concat_tokens = torch.cat([fused_embs, token_embs], dim=1)
+        mask = self.build_cross_causal_mask(fused_embs.shape[1], token_embs.shape[1], device=concat_tokens.device)
+
+        li = fused_embs.shape[1]
+        logits = self.text_decoder(concat_tokens, li, mask)
+        out_dict = {
+            "image_features": image_latent,
+            "text_features": text_latent,
+            "logits": logits,
+            "logit_scale": self.logit_scale.exp()
+        }
+        if labels is not None:
+            out_dict["labels"] = labels
+        if self.logit_bias is not None:
+            out_dict["logit_bias"] = self.logit_bias
+        return out_dict
+
 
 class CLIP(nn.Module):
     output_dict: torch.jit.Final[bool]
@@ -287,7 +594,7 @@ class CLIP(nn.Module):
         x = x + self.positional_embedding.to(cast_dtype)
         x = self.transformer(x, attn_mask=self.attn_mask)
         x = self.ln_final(x)  # [batch_size, n_ctx, transformer.width]
-        x, _ = text_global_pool(x, text, self.text_pool_type)
+        x = text_global_pool(x, text, self.text_pool_type)
         if self.text_projection is not None:
             if isinstance(self.text_projection, nn.Linear):
                 x = self.text_projection(x)
@@ -304,6 +611,109 @@ class CLIP(nn.Module):
             image_logits += self.logit_bias
         text_logits = image_logits.T
         return image_logits, text_logits
+
+    def forward_intermediates(
+            self,
+            image: Optional[torch.Tensor] = None,
+            text: Optional[torch.Tensor] = None,
+            image_indices: Optional[Union[int, List[int]]] = None,
+            text_indices: Optional[Union[int, List[int]]] = None,
+            stop_early: bool = False,
+            normalize: bool = True,
+            normalize_intermediates: bool = False,
+            intermediates_only: bool = False,
+            image_output_fmt: str = 'NCHW',
+            image_output_extra_tokens: bool = False,
+            text_output_fmt: str = 'NLC',
+            text_output_extra_tokens: bool = False,
+            output_logits: bool = False,
+            output_logit_scale_bias: bool = False,
+    ) -> Dict[str, Union[torch.Tensor, List[torch.Tensor]]]:
+        """ Forward features that returns intermediates.
+
+        Args:
+            image: Input image tensor
+            text: Input text tensor
+            image_indices: For image tower, Take last n blocks if int, all if None, select matching indices if sequence
+            text_indices: Take last n blocks if int, all if None, select matching indices if sequence
+            stop_early: Stop iterating over blocks when last desired intermediate hit
+            normalize_intermediates: Apply final norm layer to all intermediates
+            normalize: L2 Normalize final features
+            intermediates_only: Only return intermediate features, do not return final features
+            image_output_fmt: Shape of intermediate image feature outputs
+            image_output_extra_tokens: Return both prefix and spatial intermediate tokens
+            text_output_fmt: Shape of intermediate text feature outputs (ignored for this model)
+            text_output_extra_tokens: Return both prefix and spatial intermediate tokens (ignored for this model)
+            output_logits: Include logits in output
+            output_logit_scale_bias: Include the logit scale bias in the output
+        Returns:
+
+        """
+        output = {}
+        if intermediates_only:
+            # intermediates only disables final feature normalization, and include logits
+            normalize = False
+            output_logits = False
+        if output_logits:
+            assert image is not None and text is not None, 'Both image and text inputs are required to compute logits'
+
+        if image is not None:
+            image_output = self.visual.forward_intermediates(
+                image,
+                indices=image_indices,
+                stop_early=stop_early,
+                normalize_intermediates=normalize_intermediates,
+                intermediates_only=intermediates_only,
+                output_fmt=image_output_fmt,
+                output_extra_tokens=image_output_extra_tokens,
+            )
+            if normalize and "image_features" in image_output:
+                image_output["image_features"] = F.normalize(image_output["image_features"], dim=-1)
+            output.update(image_output)
+
+        if text is not None:
+            cast_dtype = self.transformer.get_cast_dtype()
+            x = self.token_embedding(text).to(cast_dtype)  # [batch_size, n_ctx, d_model]
+            x = x + self.positional_embedding.to(cast_dtype)
+            x, intermediates = self.transformer.forward_intermediates(
+                x,
+                attn_mask=self.attn_mask,
+                indices=text_indices
+            )
+            if normalize_intermediates:
+                intermediates = [self.ln_final(xi) for xi in intermediates]
+
+            # NOTE this model doesn't support cls embed in text transformer, no need for extra intermediate tokens
+            output["text_intermediates"] = intermediates
+
+            if not intermediates_only:
+                x = self.ln_final(x)  # [batch_size, n_ctx, transformer.width]
+                x = text_global_pool(x, text, self.text_pool_type)
+                if self.text_projection is not None:
+                    if isinstance(self.text_projection, nn.Linear):
+                        x = self.text_projection(x)
+                    else:
+                        x = x @ self.text_projection
+                if normalize:
+                    x = F.normalize(x, dim=-1)
+                output["text_features"] = x
+
+        logit_scale_exp = self.logit_scale.exp() if output_logits or output_logit_scale_bias else None
+
+        if output_logits:
+            image_logits = logit_scale_exp * output["image_features"] @ output["text_features"].T
+            if self.logit_bias is not None:
+                image_logits += self.logit_bias
+            text_logits = image_logits.T
+            output["image_logits"] = image_logits
+            output["text_logits"] = text_logits
+
+        if output_logit_scale_bias:
+            output["logit_scale"] = logit_scale_exp
+            if self.logit_bias is not None:
+                output['logit_bias'] = self.logit_bias
+
+        return output
 
     def forward(
             self,
@@ -397,6 +807,96 @@ class CustomTextCLIP(nn.Module):
             image_logits += self.logit_bias
         text_logits = image_logits.T
         return image_logits, text_logits
+
+    def forward_intermediates(
+            self,
+            image: Optional[torch.Tensor] = None,
+            text: Optional[torch.Tensor] = None,
+            image_indices: Optional[Union[int, List[int]]] = None,
+            text_indices: Optional[Union[int, List[int]]] = None,
+            stop_early: bool = False,
+            normalize: bool = True,
+            normalize_intermediates: bool = False,
+            intermediates_only: bool = False,
+            image_output_fmt: str = 'NCHW',
+            image_output_extra_tokens: bool = False,
+            text_output_fmt: str = 'NLC',
+            text_output_extra_tokens: bool = False,
+            output_logits: bool = False,
+            output_logit_scale_bias: bool = False,
+    ) -> Dict[str, Union[torch.Tensor, List[torch.Tensor]]]:
+        """ Forward features that returns intermediates.
+
+        Args:
+            image: Input image tensor
+            text: Input text tensor
+            image_indices: For image tower, Take last n blocks if int, all if None, select matching indices if sequence
+            text_indices: Take last n blocks if int, all if None, select matching indices if sequence
+            stop_early: Stop iterating over blocks when last desired intermediate hit
+            normalize: L2 Normalize final image and text features (if present)
+            normalize_intermediates: Apply final encoder norm layer to all intermediates (if possible)
+            intermediates_only: Only return intermediate features, do not return final features
+            image_output_fmt: Shape of intermediate image feature outputs
+            image_output_extra_tokens: Return both prefix and spatial intermediate tokens
+            text_output_fmt: Shape of intermediate text feature outputs
+            text_output_extra_tokens: Return both prefix and spatial intermediate tokens
+            output_logits: Include logits in output
+            output_logit_scale_bias: Include the logit scale bias in the output
+        Returns:
+
+        """
+        output = {}
+        if intermediates_only:
+            # intermediates only disables final feature normalization, and include logits
+            normalize = False
+            output_logits = False
+        if output_logits:
+            assert image is not None and text is not None, 'Both image and text inputs are required to compute logits'
+
+        if image is not None:
+            image_output = self.visual.forward_intermediates(
+                image,
+                indices=image_indices,
+                stop_early=stop_early,
+                normalize_intermediates=normalize_intermediates,
+                intermediates_only=intermediates_only,
+                output_fmt=image_output_fmt,
+                output_extra_tokens=image_output_extra_tokens,
+            )
+            if normalize and "image_features" in image_output:
+                image_output["image_features"] = F.normalize(image_output["image_features"], dim=-1)
+            output.update(image_output)
+
+        if text is not None:
+            text_output = self.text.forward_intermediates(
+                text,
+                indices=text_indices,
+                stop_early=stop_early,
+                normalize_intermediates=normalize_intermediates,
+                intermediates_only=intermediates_only,
+                output_fmt=text_output_fmt,
+                output_extra_tokens=text_output_extra_tokens,
+            )
+            if normalize and "text_features" in text_output:
+                text_output["text_features"] = F.normalize(text_output["text_features"], dim=-1)
+            output.update(text_output)
+
+        logit_scale_exp = self.logit_scale.exp() if output_logits or output_logit_scale_bias else None
+
+        if output_logits:
+            image_logits = logit_scale_exp * output["image_features"] @ output["text_features"].T
+            if self.logit_bias is not None:
+                image_logits += self.logit_bias
+            text_logits = image_logits.T
+            output["image_logits"] = image_logits
+            output["text_logits"] = text_logits
+
+        if output_logit_scale_bias:
+            output["logit_scale"] = logit_scale_exp
+            if self.logit_bias is not None:
+                output['logit_bias'] = self.logit_bias
+
+        return output
 
     def forward(
             self,

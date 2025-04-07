@@ -400,6 +400,134 @@ def get_reduction_mask_fn(type: str):
         return syntax_mask_tokenize  # randomly drop prioritized by syntax
 
 
+class HFTokenizer:
+    """HuggingFace tokenizer wrapper"""
+
+    def __init__(
+            self,
+            tokenizer_name: str,
+            context_length: Optional[int] = DEFAULT_CONTEXT_LENGTH,
+            clean: str = 'whitespace',
+            strip_sep_token: bool = False,
+            language: Optional[str] = None,
+            cache_dir: Optional[str] = None,
+            **kwargs
+    ):
+        from transformers import AutoTokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=cache_dir, **kwargs)
+        set_lang_fn = getattr(self.tokenizer, 'set_src_lang_special_tokens', None)
+        if callable(set_lang_fn):
+            self.set_lang_fn = set_lang_fn
+        if language is not None:
+            self.set_language(language)
+        self.context_length = context_length
+        self.clean_fn = get_clean_fn(clean)
+        self.strip_sep_token = strip_sep_token
+
+    def save_pretrained(self, dest):
+        self.tokenizer.save_pretrained(dest)
+
+    def __call__(self, texts: Union[str, List[str]], context_length: Optional[int] = None) -> torch.Tensor:
+        # same cleaning as for default tokenizer, except lowercasing
+        # adding lower (for case-sensitive tokenizers) will make it more robust but less sensitive to nuance
+        if isinstance(texts, str):
+            texts = [texts]
+
+        context_length = context_length or self.context_length
+        assert context_length, 'Please set a valid context length in class init or call.'
+
+        texts = [self.clean_fn(text) for text in texts]
+        input_ids = self.tokenizer.batch_encode_plus(
+            texts,
+            return_tensors='pt',
+            max_length=context_length,
+            padding='max_length',
+            truncation=True,
+        ).input_ids
+
+        if self.strip_sep_token:
+            input_ids = torch.where(
+                input_ids == self.tokenizer.sep_token_id,
+                torch.zeros_like(input_ids),
+                input_ids,
+            )
+
+        return input_ids
+    
+    def set_language(self, src_lang):
+        if hasattr(self, 'set_lang_fn'):
+            self.set_lang_fn(src_lang)
+        else:
+            warnings.warn('Cannot set language for the tokenizer.')
+
+
+class SigLipTokenizer:
+    """HuggingFace tokenizer wrapper for SigLIP T5 compatible sentencepiece vocabs
+
+    NOTE: this is not needed in normal library use, but is used to import new sentencepiece tokenizers
+    into OpenCLIP. Leaving code here in case future models use new tokenizers.
+    """
+    VOCAB_FILES = {
+        # english, vocab_size=32_000
+        "c4-en": "http://storage.googleapis.com/t5-data/vocabs/cc_en.32000/sentencepiece.model",
+        # used in multilingual models (mT5, PaLI), vocab_size=250_000
+        "mc4": "http://storage.googleapis.com/t5-data/vocabs/mc4.250000.100extra/sentencepiece.model",
+        # used in SigLIP2 models, vocab_size=256000
+        "gemma": "http://storage.googleapis.com/big_vision/gemma_tokenizer.model",
+    }
+
+    def __init__(
+            self,
+            tokenizer_name: str,
+            context_length: Optional[int] = 64,
+    ):
+        if 'gemma' in tokenizer_name:
+            from transformers import GemmaTokenizerFast
+            tokenizer_cls = partial(
+                GemmaTokenizerFast, padding_side='right', add_bos_token=False, add_eos_token=True)
+        else:
+            from transformers import T5TokenizerFast
+            tokenizer_cls = partial(T5TokenizerFast, extra_ids=0)
+
+        if tokenizer_name in self.VOCAB_FILES:
+            # FIXME temporary hack?
+            import tempfile
+            import fsspec
+            vocab_file = self.VOCAB_FILES[tokenizer_name]
+            with tempfile.NamedTemporaryFile('wb') as dst:
+                with fsspec.open(vocab_file, 'rb') as src:
+                    dst.write(src.read())
+                self.tokenizer = tokenizer_cls(dst.name, legacy=False)
+        else:
+            self.tokenizer = tokenizer_cls(tokenizer_name, legacy=False)
+
+        self.tokenizer.pad_token_id = 0 if 'gemma' in tokenizer_name else 1
+        self.tokenizer.eos_token_id = 1
+        self.context_length = context_length
+
+    def save_pretrained(self, dest):
+        self.tokenizer.save_pretrained(dest)
+
+    def __call__(self, texts: Union[str, List[str]], context_length: Optional[int] = None) -> torch.Tensor:
+        # same cleaning as for default tokenizer, except lowercasing
+        # adding lower (for case-sensitive tokenizers) will make it more robust but less sensitive to nuance
+        if isinstance(texts, str):
+            texts = [texts]
+
+        context_length = context_length or self.context_length
+        assert context_length, 'Please set a valid context length in class init or call.'
+
+        texts = [canonicalize_text(basic_clean(text)) for text in texts]
+        output = self.tokenizer(
+            texts,
+            return_tensors='pt',
+            max_length=context_length,
+            padding='max_length',
+            truncation=True,
+        )
+        return output.input_ids
+
+
 from tokenizers import BertWordPieceTokenizer
 
 class CustomTokenizer:
@@ -481,124 +609,3 @@ class CLIPS_Tokenizer:
             self.set_lang_fn(src_lang)
         else:
             warnings.warn('Cannot set language for the tokenizer.')
-
-
-class HFTokenizer:
-    """HuggingFace tokenizer wrapper"""
-
-    def __init__(
-            self,
-            tokenizer_name: str,
-            context_length: Optional[int] = DEFAULT_CONTEXT_LENGTH,
-            clean: str = 'whitespace',
-            strip_sep_token: bool = False,
-            language: Optional[str] = None,
-            cache_dir: Optional[str] = None,
-            **kwargs
-    ):
-        from transformers import AutoTokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, cache_dir=cache_dir, **kwargs)
-        set_lang_fn = getattr(self.tokenizer, 'set_src_lang_special_tokens', None)
-        if callable(set_lang_fn):
-            self.set_lang_fn = set_lang_fn
-        if language is not None:
-            self.set_language(language)
-        self.context_length = context_length
-        self.clean_fn = get_clean_fn(clean)
-        self.strip_sep_token = strip_sep_token
-
-    def save_pretrained(self, dest):
-        self.tokenizer.save_pretrained(dest)
-
-    def __call__(self, texts: Union[str, List[str]], context_length: Optional[int] = None) -> torch.Tensor:
-        # same cleaning as for default tokenizer, except lowercasing
-        # adding lower (for case-sensitive tokenizers) will make it more robust but less sensitive to nuance
-        if isinstance(texts, str):
-            texts = [texts]
-
-        context_length = context_length or self.context_length
-        assert context_length, 'Please set a valid context length in class init or call.'
-
-        texts = [self.clean_fn(text) for text in texts]
-        input_ids = self.tokenizer.batch_encode_plus(
-            texts,
-            return_tensors='pt',
-            max_length=context_length,
-            padding='max_length',
-            truncation=True,
-        ).input_ids
-
-        if self.strip_sep_token:
-            input_ids = torch.where(
-                input_ids == self.tokenizer.sep_token_id,
-                torch.zeros_like(input_ids),
-                input_ids,
-            )
-
-        return input_ids
-    
-    def set_language(self, src_lang):
-        if hasattr(self, 'set_lang_fn'):
-            self.set_lang_fn(src_lang)
-        else:
-            warnings.warn('Cannot set language for the tokenizer.')
-
-
-class SigLipTokenizer:
-    """HuggingFace tokenizer wrapper for SigLIP T5 compatible sentencepiece vocabs
-
-    NOTE: this is not needed in normal library use, but is used to import new sentencepiece tokenizers
-    into OpenCLIP. Leaving code here in case future models use new tokenizers.
-    """
-    VOCAB_FILES = {
-        # english, vocab_size=32_000
-        "c4-en": "http://storage.googleapis.com/t5-data/vocabs/cc_en.32000/sentencepiece.model",
-        # used in multilingual models (mT5, PaLI), vocab_size=250_000
-        "mc4": "http://storage.googleapis.com/t5-data/vocabs/mc4.250000.100extra/sentencepiece.model",
-    }
-
-    def __init__(
-            self,
-            tokenizer_name: str,
-            context_length: Optional[int] = 64,
-    ):
-        from transformers import T5TokenizerFast
-
-        if tokenizer_name in self.VOCAB_FILES:
-            # FIXME temporary hack?
-            import tempfile
-
-            import fsspec
-            vocab_file = self.VOCAB_FILES[tokenizer_name]
-            with tempfile.NamedTemporaryFile('wb') as dst:
-                with fsspec.open(vocab_file, 'rb') as src:
-                    dst.write(src.read())
-                self.tokenizer = T5TokenizerFast(dst.name, legacy=False)
-        else:
-            self.tokenizer = T5TokenizerFast(tokenizer_name, legacy=False)
-
-        self.tokenizer.pad_token_id = 1
-        self.tokenizer.eos_token_id = 1
-        self.context_length = context_length
-
-    def save_pretrained(self, dest):
-        self.tokenizer.save_pretrained(dest)
-
-    def __call__(self, texts: Union[str, List[str]], context_length: Optional[int] = None) -> torch.Tensor:
-        # same cleaning as for default tokenizer, except lowercasing
-        # adding lower (for case-sensitive tokenizers) will make it more robust but less sensitive to nuance
-        if isinstance(texts, str):
-            texts = [texts]
-
-        context_length = context_length or self.context_length
-        assert context_length, 'Please set a valid context length in class init or call.'
-
-        texts = [canonicalize_text(basic_clean(text)) for text in texts]
-        output = self.tokenizer(
-            texts,
-            return_tensors='pt',
-            max_length=context_length,
-            padding='max_length',
-            truncation=True,
-        )
-        return output.input_ids
