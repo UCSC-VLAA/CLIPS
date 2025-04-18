@@ -110,12 +110,9 @@ We would like to thank TPU Research Cloud (TRC) program, Google Cloud Research C
 If you use our work, please cite it:
 
 ```bibtex
-@misc{liu2024clipsenhancedclipframework,
-      title={CLIPS: An Enhanced CLIP Framework for Learning with Synthetic Captions}, 
-      author={Yanqing Liu and Xianhang Li and Zeyu Wang and Bingchen Zhao and Cihang Xie},
-      year={2024},
-      eprint={2411.16828},
-      archivePrefix={arXiv},
-      primaryClass={cs.CV},
-      url={https://arxiv.org/abs/2411.16828}, 
+@article{liu2024clips,
+  title={CLIPS: An Enhanced CLIP Framework for Learning with Synthetic Captions},
+  author={Liu, Yanqing and Li, Xianhang and Wang, Zeyu and Zhao, Bingchen and Xie, Cihang},
+  journal={arXiv preprint arXiv:2411.16828},
+  year={2024}
 }
